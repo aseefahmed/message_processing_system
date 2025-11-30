@@ -1,10 +1,12 @@
-# app/tasks.py
 import time
-from app.extensions import celery
 from app.models import Message
 from app.database import db
+from app.metrics import MESSAGE_STATUS
 
-@celery.task(bind=True)
+from celery import shared_task
+
+
+@shared_task(bind=True)
 def process_message(self, message_id):
     msg = Message.query.get(message_id)
 
@@ -16,8 +18,10 @@ def process_message(self, message_id):
 
         msg.status = "completed"
         db.session.commit()
+        MESSAGE_STATUS.labels("completed").inc()
 
     except Exception as e:
         msg.status = "failed"
         db.session.commit()
+        MESSAGE_STATUS.labels("failed").inc()
         raise self.retry(exc=e)

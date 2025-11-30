@@ -2,51 +2,84 @@ from flask import Blueprint, request, jsonify
 from .models import Message
 from .database import db
 from .tasks import process_message
-from prometheus_client import Counter
 
+# Import shared Prometheus metrics (DO NOT REDECLARE)
+from app.metrics import (
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    API_ERRORS
+)
 
 api_bp = Blueprint("api", __name__)
 
 
-requests_total = Counter("api_requests_total", "Total API Requests", ["endpoint", "method"])
-errors_total = Counter("api_errors_total", "API Errors", ["endpoint"])
-messages_processed = Counter("messages_processed", "Messages processed", ["status"])
-
-
 @api_bp.before_request
-def before():
-    requests_total.labels(endpoint=request.path, method=request.method).inc()
+def before_request():
+    request._timer = REQUEST_LATENCY.labels(request.path).time()
+
+
+@api_bp.after_request
+def after_request(response):
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.path,
+        status=response.status_code
+    ).inc()
+
+    request._timer()
+    return response
 
 
 @api_bp.route("/messages", methods=["POST"])
 def create_message():
-    data = request.json
-    msg = Message(content=data.get("content"))
-    db.session.add(msg)
-    db.session.commit()
+    try:
+        data = request.json or {}
 
+        msg = Message(content=data.get("content"))
+        db.session.add(msg)
+        db.session.commit()
 
-    process_message.delay(msg.id)
-    return jsonify({"id": msg.id, "status": msg.status})
+        process_message.delay(msg.id)
+
+        return jsonify({"id": msg.id, "status": msg.status}), 201
+
+    except Exception as e:
+        API_ERRORS.labels(
+            endpoint="/messages",
+            error_type=type(e).__name__
+        ).inc()
+
+        db.session.rollback()
+
+        return jsonify({"error": str(e)}), 500
 
 
 @api_bp.route("/messages", methods=["GET"])
 def list_messages():
     status_filter = request.args.get("status")
     query = Message.query
+
     if status_filter:
         query = query.filter_by(status=status_filter)
-    return jsonify([{
-    "id": m.id,
-    "content": m.content,
-    "status": m.status
-    } for m in query.all()])
+
+    return jsonify([
+        {
+            "id": m.id,
+            "content": m.content,
+            "status": m.status,
+        }
+        for m in query.all()
+    ])
 
 
 @api_bp.route("/messages/<id>")
 def get_message(id):
     msg = Message.query.get_or_404(id)
-    return jsonify({"id": msg.id, "content": msg.content, "status": msg.status})
+    return jsonify({
+        "id": msg.id,
+        "content": msg.content,
+        "status": msg.status,
+    })
 
 
 @api_bp.route("/messages/stats")
@@ -57,11 +90,10 @@ def stats():
     completed = Message.query.filter_by(status="completed").count()
     failed = Message.query.filter_by(status="failed").count()
 
-
     return jsonify({
         "total": total,
         "pending": pending,
         "processing": processing,
         "completed": completed,
-        "failed": failed
+        "failed": failed,
     })

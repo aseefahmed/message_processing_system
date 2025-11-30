@@ -1,11 +1,8 @@
-from app import create_app
-from app.celery_app import init_celery
-from app.extensions import celery
+# app/celery_worker.py
 
-# Create Flask app
+from app import create_app, celery
+
+# Initialize Flask app first. This will also initialize Celery.
 app = create_app()
 
-# Initialize Celery WITH Flask app
-init_celery(app)
-
-# Expose Celery for worker
+# Nothing else needed — Celery is already set up inside create_app()
