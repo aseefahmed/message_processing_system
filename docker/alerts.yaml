@@ -1,0 +1,13 @@
+- alert: HighErrorRate
+  expr: api_errors_total > 5
+  for: 5m
+  labels:
+  severity: critical
+  annotations:
+  description: "API error rate above 5%"
+
+
+- alert: LargeQueueDepth
+  expr: messages_processed{status="pending"} > 100
+  labels:
+  severity: warning
