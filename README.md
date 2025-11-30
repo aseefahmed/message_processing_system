@@ -257,5 +257,5 @@ The application exposes Prometheus metrics at `/metrics`. Key metrics include:
 - `api_errors_total`: Total API errors by endpoint and error type
 - `messages_processed_total`: Messages processed by status
 
-For more information on deployment and monitoring, see [DEPLOYMENT.md](DEPLOYMENT.md).
+For more information on deployment and monitoring, see [DEPLOYMENT.md](Deployment.md).
 
